@@ -9,22 +9,7 @@ using namespace std;
 struct Chip8Registers
 {
     // General purpose 8 bit registers
-    uint8_t V0;
-    uint8_t V1;
-    uint8_t V2;
-    uint8_t V3;
-    uint8_t V4;
-    uint8_t V5;
-    uint8_t V6;
-    uint8_t V7;
-    uint8_t V8;
-    uint8_t V9;
-    uint8_t VA;
-    uint8_t VB;
-    uint8_t VC;
-    uint8_t VD;
-    uint8_t VE;
-    uint8_t VF; // should not be used by any program used as a flag by some instructions;
+    uint8_t V[16];
 
     // Used to store memory addresses only the lowest rightmost 12 bits are used.
     uint8_t I;
@@ -80,9 +65,9 @@ int main(int argc, char *argv[])
 
     std::println("Memory Block Size: {}", sizeof(memoryBuffer));
 
-    Chip8Registers registers;
+    Chip8Registers cpuRegisters;
 
-    registers.stackPointer = memoryBuffer;
+    // registers.stackPointer = memoryBuffer;
 
     SDL_Window *window;
     SDL_Renderer *renderer;
@@ -116,103 +101,43 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    Person p = {"5ft 10", "208"};
-
-    ofstream file("person.dat", ios::binary);
-
-    file.write((char *)&p, sizeof(p));
-    file.close();
-
-    cout << "Data Saved" << "\n";
-
-    Person readPerson;
-
-    ifstream inputFile("roms/ibm-logo.ch8", ios::binary);
-    // inputFile.read((char*)&readPerson, sizeof(readPerson));
-
-    // cout << "Height: " << readPerson.height << "Weight: " << readPerson.weight << "\n";
+    // Read Rom file
+    ifstream romFile("roms/ibm-logo.ch8", ios::binary);
 
     char ch;
 
-    if (!inputFile)
+    if (!romFile)
     {
         println("Couldn't read file");
         return 1;
     }
 
-    inputFile.seekg(0, inputFile.end);
-    int length = inputFile.tellg();
-    inputFile.seekg(0, inputFile.beg);
+    romFile.seekg(0, romFile.end);
+    int length = romFile.tellg();
+    romFile.seekg(0, romFile.beg);
 
     println("Length of file: {}", length);
 
-    // char *buffer = new char[length];
+    int programEntryPoint = 0x200;
 
-    // inputFile.read(buffer, length);
-
-    int counter = 0;
-
-    while (inputFile.get(ch))
+    while (romFile.get(ch))
     {
-
-        if (counter == 2)
-        {
-            counter = 0;
-            cout << " ";
-        }
-
-        cout << std::hex << static_cast<int>(static_cast<unsigned char>(ch));
-
-        char memoryStartingPoint = 0x200;
-
-        memoryBuffer[memoryStartingPoint] = static_cast<int>(ch);
-        
-        memoryStartingPoint++;
-
-        counter++;
+        std::println("{:02x}", ch);
+        //  load program data into memory
+        memoryBuffer[programEntryPoint++] = static_cast<int>(ch);
     }
 
-    inputFile.close();
+    romFile.close();
 
-    // delete[] buffer;
+    // Set the program counter initial address
+    cpuRegisters.programCounter = 0x200;
 
-    // std::ifstream file("roms/program.txt", ios::in | ios::binary);
+    // uint16_t opcode = static_cast<uint16_t>((memoryBuffer[cpuRegisters.programCounter]) << 8) | memoryBuffer[cpuRegisters.programCounter + 1];
+    // uint8_t firstOpcodeByte = opcode & 0x0F;
+    // uint16_t lastChunkOpcode = opcode & 0x0FFF;
+    // uint16_t registerNum = opcode & 0x0F00;
 
-    // if (!file)
-    // {
-    //     println("Couldn't read file.");
-    //     return 1;
-    // }
-
-    // string str;
-
-    // char buffer[136];
-
-    // while (file.read(buffer, 136))
-    // {
-    //     std::streamsize bytesRead = file.gcount();
-    //     std::cout << "Successfully read a full chunk of " << bytesRead << " bytes.\n";
-    // }
-
-    // // Handle the last remaining partial chunk at the End Of File (EOF)
-    // if (file.eof())
-    // {
-    //     std::streamsize finalBytes = file.gcount();
-    //     if (finalBytes > 0)
-    //     {
-    //         std::cout << "Read final partial chunk of " << finalBytes << " bytes.\n";
-    //         // Process the final batch of 'finalBytes' inside the buffer here
-    //     }
-    // }
-
-    // file.close();
-
-    // for(auto &item : buffer)
-    // {
-    //     std::cout << item;
-    // }
-
-    char name[6] = "hello";
+    // println("Register Number: {:X}", registerNum);
 
     while (!done)
     {
@@ -228,23 +153,96 @@ int main(int argc, char *argv[])
 
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
+        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
 
         // // Fetch instructions
-        // for (auto &instruction : memoryBuffer)
-        // {
-        //     std::println("This is a hex instruction {:#X}", instruction);
-        //     switch (instruction)
-        //     {
-        //     case 0x0E0:
-        //         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-        //         SDL_RenderPoint(renderer, 40, 40);
-        //         break;
-        //     }
-        // }
+        uint16_t opcode = static_cast<uint16_t>((memoryBuffer[cpuRegisters.programCounter]) << 8) | memoryBuffer[cpuRegisters.programCounter + 1];
 
-        // Decode
+        println("Current opcode: {:X}",opcode);
 
-        // Execute
+        uint8_t firstOpcodeNibble = opcode >> 0x0F;
+        uint16_t address = opcode & 0x0FFF;
+        uint16_t vxRegister = opcode >> 8 & 0x0F;
+        uint16_t values = opcode & 0xFF;
+        uint16_t spriteBytes = opcode & 0x0F;
+
+
+        if(memoryBuffer[cpuRegisters.programCounter] < 4096) {
+             cpuRegisters.programCounter += 2;
+        }
+
+        switch (firstOpcodeNibble)
+        {
+
+        case 0x0:
+
+            if (opcode == 0x00E0)
+            {
+                println("cmd: display clear ");
+            }
+
+            if (opcode == 0x00EE)
+            {
+                println("cmd: display clear ");
+            }
+            break;
+
+        case 0x1:
+            cpuRegisters.programCounter = address;
+            break;
+
+        case 0x2:
+
+            break;
+
+        case 0x3:
+
+            break;
+
+        case 0x4:
+
+            break;
+
+        case 0x5:
+
+            break;
+
+        case 0x6:
+            cpuRegisters.V[vxRegister] = values;
+            break;
+
+        case 0x7:
+            cpuRegisters.V[vxRegister] = values;
+            break;
+
+        case 0x8:
+
+            break;
+
+        case 0x9:
+
+            break;
+
+        case 0xA:
+            cpuRegisters.I = values;
+            break;
+
+        case 0xD:
+            SDL_FRect rect;
+            uint8_t xCor = (opcode >> 8) & 0x0F;
+            uint8_t yCor = (opcode >> 8) & 0x0F;
+
+            rect.x = xCor;
+            rect.y = yCor;
+            rect.h = 5;
+            rect.w = 8;
+            println("cmd: display Draw ");
+            SDL_RenderRect(renderer, &rect);
+            break;
+        }
+       // Decode
+
+        //  Execute
         SDL_RenderPresent(renderer);
     }
 
