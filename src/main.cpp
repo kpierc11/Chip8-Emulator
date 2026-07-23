@@ -1,6 +1,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include <fstream>
+#include <bitset>
 import std;
 
 using namespace std;
@@ -12,7 +13,7 @@ struct Chip8Registers
     uint8_t V[16];
 
     // Used to store memory addresses only the lowest rightmost 12 bits are used.
-    uint8_t I;
+    uint16_t I;
 
     // When these registers are non-zero they are automatically decremented at a rate of 60Hz
     uint8_t delayTimer;
@@ -26,12 +27,6 @@ struct Chip8Registers
 
     // Used to store addresses for subroutines
     uint16_t stack[16];
-};
-
-struct Person
-{
-    std::string height;
-    std::string weight;
 };
 
 void readROM()
@@ -82,7 +77,7 @@ int main(int argc, char *argv[])
     window = SDL_CreateWindow(
         "An SDL3 window",
         640,
-        480,
+        320,
         SDL_WINDOW_OPENGL);
 
     if (!window)
@@ -102,7 +97,7 @@ int main(int argc, char *argv[])
     }
 
     // Read Rom file
-    ifstream romFile("roms/ibm-logo.ch8", ios::binary);
+    ifstream romFile("roms/ibm.ch8", ios::binary);
 
     char ch;
 
@@ -122,8 +117,8 @@ int main(int argc, char *argv[])
 
     while (romFile.get(ch))
     {
-        std::println("{:02x}", ch);
-        //  load program data into memory
+        // std::println("{:02x}", ch);
+        //   load program data into memory
         memoryBuffer[programEntryPoint++] = static_cast<int>(ch);
     }
 
@@ -139,6 +134,16 @@ int main(int argc, char *argv[])
 
     // println("Register Number: {:X}", registerNum);
 
+    struct Pixel
+    {
+        SDL_FRect position;
+        SDL_Color color;
+    };
+
+    vector<Pixel> pixels;
+
+    const float pixelSize = 10.0f;
+
     while (!done)
     {
         SDL_Event event;
@@ -153,22 +158,27 @@ int main(int argc, char *argv[])
 
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
 
         // // Fetch instructions
         uint16_t opcode = static_cast<uint16_t>((memoryBuffer[cpuRegisters.programCounter]) << 8) | memoryBuffer[cpuRegisters.programCounter + 1];
 
-        println("Current opcode: {:X}",opcode);
+        uint8_t firstOpcodeNibble = (opcode >> 12) & 0xF;
+        uint16_t NNN = opcode & 0xFFF;
+        uint16_t vxRegister = (opcode >> 8) & 0x0F;
+        uint16_t vyRegister = (opcode >> 4) & 0x0F;
+        uint16_t NN = opcode & 0xFF;
+        uint16_t N = opcode & 0x0F;
 
-        uint8_t firstOpcodeNibble = opcode >> 0x0F;
-        uint16_t address = opcode & 0x0FFF;
-        uint16_t vxRegister = opcode >> 8 & 0x0F;
-        uint16_t values = opcode & 0xFF;
-        uint16_t spriteBytes = opcode & 0x0F;
-
-
-        if(memoryBuffer[cpuRegisters.programCounter] < 4096) {
-             cpuRegisters.programCounter += 2;
+        if (cpuRegisters.programCounter < length + 0x200)
+        {
+            cpuRegisters.programCounter += 2;
+            // println("Full Opcode: {:04X}", opcode);
+            // println("First opcode nibble: {:X}", firstOpcodeNibble);
+            // println("NN: {:02X}", NN);
+            // println("Vx Register: {:X}", vxRegister);
+            // println("Vy Register: {:X}", vyRegister);
+            // println("NNN: {:03X}", NNN);
+            // println("N: {:X}", N);
         }
 
         switch (firstOpcodeNibble)
@@ -178,17 +188,19 @@ int main(int argc, char *argv[])
 
             if (opcode == 0x00E0)
             {
-                println("cmd: display clear ");
+                for (auto &pixel : pixels)
+                {
+                    pixel.color = {0, 0, 0, 255};
+                }
             }
 
             if (opcode == 0x00EE)
             {
-                println("cmd: display clear ");
             }
             break;
 
         case 0x1:
-            cpuRegisters.programCounter = address;
+            cpuRegisters.programCounter = NNN;
             break;
 
         case 0x2:
@@ -208,11 +220,11 @@ int main(int argc, char *argv[])
             break;
 
         case 0x6:
-            cpuRegisters.V[vxRegister] = values;
+            cpuRegisters.V[vxRegister] = NN;
             break;
 
         case 0x7:
-            cpuRegisters.V[vxRegister] = values;
+            cpuRegisters.V[vxRegister] += NN;
             break;
 
         case 0x8:
@@ -224,25 +236,68 @@ int main(int argc, char *argv[])
             break;
 
         case 0xA:
-            cpuRegisters.I = values;
+            cpuRegisters.I = NNN;
             break;
 
         case 0xD:
-            SDL_FRect rect;
-            uint8_t xCor = (opcode >> 8) & 0x0F;
-            uint8_t yCor = (opcode >> 8) & 0x0F;
+            println("Full Draw Opcode {:X}", opcode);
 
-            rect.x = xCor;
-            rect.y = yCor;
-            rect.h = 5;
-            rect.w = 8;
+            cout << std::hex << cpuRegisters.I << "\n";
+            cout << std::hex << cpuRegisters.I + N << "\n";
+            uint16_t xCor = cpuRegisters.V[vxRegister];
+            uint16_t yCor = cpuRegisters.V[vyRegister];
+
+            for (uint16_t i = cpuRegisters.I; i < cpuRegisters.I + N; i++)
+            {
+                uint8_t byte = memoryBuffer[i];
+
+                bitset<8> bits(byte);
+
+                for (size_t j = bits.size() - 1; j > 0; --j)
+                {
+                    Pixel pixel;
+                    cout << bits[j];
+
+                    pixel.position.x = static_cast<float>(xCor) * 10.0f;
+                    pixel.position.y = static_cast<float>(yCor) * 10.0f;
+                    if (bits[j])
+                    {
+
+                        pixel.position.h = pixelSize;
+                        pixel.position.w = pixelSize;
+                        pixel.color = {255, 255, 255, 255};
+                        cpuRegisters.V[0xf] = 1;
+                    }
+                    else
+                    {
+                        pixel.position.h = pixelSize;
+                        pixel.position.w = pixelSize;
+                        pixel.color = {0, 0, 0, 255};
+                        cpuRegisters.V[0xf] = 0;
+                    }
+
+                    xCor += 1.0f;
+                    pixels.push_back(pixel);
+                }
+                xCor = cpuRegisters.V[vxRegister];
+                yCor += 1.0f;
+                cout << " " << "\n";
+            }
+
+            println("X cord {}", xCor);
+            println("Y Cord {}", yCor);
             println("cmd: display Draw ");
-            SDL_RenderRect(renderer, &rect);
             break;
         }
-       // Decode
+        // Decode
 
-        //  Execute
+        for (Pixel &pixel : pixels)
+        {
+            SDL_SetRenderDrawColor(renderer, pixel.color.r, pixel.color.g, pixel.color.b, pixel.color.a);
+            SDL_RenderFillRect(renderer, &pixel.position);
+        }
+
+        //   Execute
         SDL_RenderPresent(renderer);
     }
 
